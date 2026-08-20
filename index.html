@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图图助手 · 极光版</title>
+  <!-- Tesseract.js 用于 OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- JSZip 用于批量下载 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- 优雅字体 -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== 全局重置 & 深空主题 ===== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: radial-gradient(ellipse at 20% 50%, #1b1033 0%, #0a0a12 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* 动态光晕背景 */
+    body::before {
+      content: '';
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(0, 212, 255, 0.08) 0%, transparent 70%);
+      top: -200px;
+      right: -100px;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: floatGlow 12s ease-in-out infinite alternate;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.07) 0%, transparent 70%);
+      bottom: -150px;
+      left: -100px;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: floatGlow 15s ease-in-out infinite alternate-reverse;
+    }
+
+    @keyframes floatGlow {
+      0% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+      100% { transform: translate(40px, -30px) scale(1.2); opacity: 1; }
+    }
+
+    /* ===== 主容器 · 毛玻璃 ===== */
+    .app {
+      display: flex;
+      width: 100%;
+      max-width: 1300px;
+      height: 92vh;
+      max-height: 900px;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(24px) saturate(1.4);
+      -webkit-backdrop-filter: blur(24px) saturate(1.4);
+      border-radius: 32px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 40px 80px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* ===== 侧边栏 ===== */
+    .sidebar {
+      width: 220px;
+      background: rgba(255, 255, 255, 0.03);
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 32px 18px 24px;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      backdrop-filter: blur(8px);
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d4ff, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo span { background: none; -webkit-text-fill-color: #fff; font-weight: 300; font-size: 14px; opacity: 0.4; margin-left: auto; }
+
+    .version-badge {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      margin: 4px 0 30px 0;
+      padding-left: 4px;
+      letter-spacing: 1px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 16px;
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.5);
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-bottom: 4px;
+      width: 100%;
+      text-align: left;
+      position: relative;
+    }
+    .nav-btn .icon { font-size: 20px; width: 28px; }
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.8);
+      transform: translateX(4px);
+    }
+    .nav-btn.active {
+      background: rgba(0, 212, 255, 0.08);
+      color: #fff;
+      box-shadow: inset 3px 0 0 #00d4ff;
+    }
+    .nav-btn.active .icon { filter: drop-shadow(0 0 6px rgba(0,212,255,0.4)); }
+
+    .sidebar-spacer { flex: 1; }
+    .sidebar-footer {
+      font-size: 11px;
+      color: rgba(255,255,255,0.2);
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding-top: 16px;
+      margin-top: 8px;
+      letter-spacing: 0.3px;
+    }
+
+    /* ===== 主内容 ===== */
+    .main {
+      flex: 1;
+      padding: 28px 36px 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    /* 自定义滚动条 */
+    .main::-webkit-scrollbar { width: 4px; }
+    .main::-webkit-scrollbar-track { background: transparent; }
+    .main::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+
+    .page-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .page-title .glow {
+      font-size: 14px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.04);
+      padding: 4px 14px;
+      border-radius: 40px;
+      border: 1px solid rgba(255,255,255,0.05);
+      letter-spacing: 0.5px;
+    }
+
+    /* ===== 卡片 · 毛玻璃 ===== */
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 20px 24px;
+      transition: border-color 0.3s;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .card:hover {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.6);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ===== 文件拖放区 ===== */
+    .file-drop-area {
+      border: 2px dashed rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 28px 20px;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      transition: all 0.4s ease;
+      background: rgba(255, 255, 255, 0.02);
+      position: relative;
+    }
+    .file-drop-area.dragover {
+      border-color: #00d4ff;
+      background: rgba(0, 212, 255, 0.05);
+      box-shadow: 0 0 30px rgba(0, 212, 255, 0.05);
+      transform: scale(1.01);
+    }
+    .file-drop-area .icon-big { font-size: 36px; display: block; margin-bottom: 6px; filter: drop-shadow(0 0 20px rgba(168,85,247,0.2)); }
+    .file-drop-area .hint { font-size: 14px; font-weight: 400; }
+
+    .file-list {
+      max-height: 120px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+      padding: 8px 12px;
+      border: 1px solid rgba(255,255,255,0.04);
+      margin: 12px 0 8px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+    }
+    .file-list::-webkit-scrollbar { width: 3px; }
+    .file-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .file-item:last-child { border: none; }
+    .file-item .size { color: rgba(255,255,255,0.25); font-size: 11px; }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 10px 0 6px;
+    }
+
+    /* ===== 霓虹按钮 ===== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 22px;
+      border: none;
+      border-radius: 40px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      letter-spacing: 0.3px;
+    }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      transform: translateY(-2px);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #00d4ff, #7b2ffc);
+      color: #fff;
+      border: none;
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 8px 30px rgba(0, 212, 255, 0.4);
+      transform: translateY(-3px) scale(1.02);
+      background: linear-gradient(135deg, #33ddff, #9a4ffc);
+    }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .btn-outline:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(255,255,255,0.2);
+    }
+    .btn-danger {
+      border-color: rgba(255, 77, 77, 0.2);
+      color: rgba(255, 77, 77, 0.6);
+    }
+    .btn-danger:hover {
+      background: rgba(255, 77, 77, 0.1);
+      border-color: rgba(255, 77, 77, 0.4);
+      color: #ff4d4d;
+    }
+
+    .file-count {
+      font-size: 12px;
+      color: rgba(255,255,255,0.3);
+      margin-top: 4px;
+    }
+
+    /* ===== 参数控件 ===== */
+    .param-row { margin: 14px 0 8px; }
+    .param-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 8px;
+    }
+    .param-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px 32px;
+      align-items: center;
+    }
+    .radio-group {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .radio-group label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .radio-group label:hover { color: #fff; }
+    .radio-group input[type="radio"] {
+      accent-color: #00d4ff;
+      width: 16px;
+      height: 16px;
+      filter: drop-shadow(0 0 4px rgba(0,212,255,0.3));
+      cursor: pointer;
+    }
+    input[type="range"] {
+      width: 200px;
+      accent-color: #7b2ffc;
+      background: transparent;
+      cursor: pointer;
+      height: 4px;
+      border-radius: 10px;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 10px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #00d4ff, #7b2ffc);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+      margin-top: -7px;
+      border: 2px solid rgba(255,255,255,0.2);
+      cursor: pointer;
+    }
+    .range-value {
+      font-size: 16px;
+      font-weight: 700;
+      color: #00d4ff;
+      min-width: 32px;
+      text-shadow: 0 0 20px rgba(0,212,255,0.2);
+    }
+    .checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 28px;
+      margin: 6px 0;
+    }
+    .checkbox-group label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .checkbox-group label:hover { color: #fff; }
+    .checkbox-group input[type="checkbox"] {
+      accent-color: #7b2ffc;
+      width: 16px;
+      height: 16px;
+      filter: drop-shadow(0 0 6px rgba(123, 47, 252, 0.2));
+      cursor: pointer;
+    }
+    select, .combo {
+      padding: 8px 16px;
+      border-radius: 40px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.3);
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: border 0.3s;
+    }
+    select:focus, .combo:focus { border-color: #00d4ff; }
+    select option { background: #1a1a2e; color: #fff; }
+
+    .hint-text {
+      font-size: 12px;
+      color: rgba(255,255,255,0.25);
+      margin-top: 4px;
+    }
+
+    /* ===== 预览区域 ===== */
+    .preview-area {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 14px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      min-height: 80px;
+      align-items: flex-start;
+    }
+    .preview-item {
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      padding: 8px;
+      width: 110px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.04);
+      transition: transform 0.2s, border-color 0.2s;
+      backdrop-filter: blur(4px);
+    }
+    .preview-item:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.1); }
+    .preview-item img {
+      max-width: 100%;
+      max-height: 80px;
+      border-radius: 6px;
+      display: block;
+      margin: 0 auto 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .preview-item .pname {
+      font-size: 10px;
+      color: rgba(255,255,255,0.4);
+      word-break: break-all;
+      line-height: 1.3;
+    }
+    .empty-preview {
+      padding: 16px 0;
+      color: rgba(255,255,255,0.15);
+      font-size: 13px;
+    }
+
+    /* ===== 底部状态 ===== */
+    .status-bar {
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: rgba(255,255,255,0.3);
+    }
+    .status-bar .left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00d4ff;
+      box-shadow: 0 0 16px #00d4ff;
+      animation: pulseDot 2s infinite;
+    }
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.8); }
+    }
+    .status-dot.idle { background: rgba(255,255,255,0.15); box-shadow: none; animation: none; }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 780px) {
+      .app { flex-direction: column; height: auto; max-height: 98vh; border-radius: 24px; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 16px 20px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; gap: 6px; }
+      .logo { font-size: 18px; margin-right: 12px; }
+      .version-badge { margin-bottom: 0; margin-right: auto; }
+      .nav-btn { width: auto; padding: 8px 14px; font-size: 13px; }
+      .nav-btn .icon { font-size: 16px; width: 20px; }
+      .main { padding: 20px; gap: 14px; }
+      .page-title { font-size: 22px; flex-wrap: wrap; }
+      .preview-item { width: 90px; }
+      input[type="range"] { width: 120px; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 8px; }
+      .card { padding: 14px; }
+      .btn { padding: 8px 14px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="logo">✦ 图图 <span>v1.1.7</span></div>
+    <div class="version-badge">✦ 极光引擎</div>
+    <button class="nav-btn active" data-page="bw"><span class="icon">🎨</span> 彩色转黑白</button>
+    <button class="nav-btn" data-page="format"><span class="icon">🔄</span> 格式转换</button>
+    <button class="nav-btn" data-page="ocr"><span class="icon">📝</span> OCR 重命名</button>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">⚡ 本地处理 · 零上传</div>
+  </aside>
+
+  <!-- 主内容 -->
+  <main class="main">
+    <div class="page-title">
+      <span id="pageTitle">🎨 彩色转黑白</span>
+      <span class="glow">✦ 实时预览</span>
+    </div>
+
+    <!-- 文件卡片 -->
+    <div class="card">
+      <div class="card-title">📁 文件工坊</div>
+      <div class="file-drop-area" id="dropArea">
+        <span class="icon-big">⬆</span>
+        <div class="hint">点击上传 或 拖拽图片至此处</div>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="selectBtn">✦ 选择文件</button>
+        <button class="btn btn-outline" id="clearBtn">✕ 清空</button>
+      </div>
+      <div class="file-count" id="fileCount">◈ 已选择 0 个文件</div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+
+    <!-- 参数卡片 -->
+    <div class="card" id="paramCard"></div>
+
+    <!-- 操作 & 预览卡片 -->
+    <div class="card" style="flex-shrink: 0;">
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        <button class="btn btn-primary" id="actionBtn" style="padding:12px 36px; font-size:15px;">✦ 开始处理</button>
+        <button class="btn btn-outline" id="downloadAllBtn">📦 打包下载 (ZIP)</button>
+        <span style="margin-left:auto; font-size:12px; color:rgba(255,255,255,0.2);" id="resultCount">等待处理</span>
+      </div>
+      <div id="previewContainer" class="preview-area">
+        <div class="empty-preview">✦ 处理后，极光预览将在此显现</div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="status-bar">
+      <span class="left"><span class="status-dot idle" id="statusDot"></span> <span id="statusText">就绪 · 等待文件</span></span>
+      <span>✦ 2026 图图 · 暗夜极光</span>
+    </div>
+  </main>
+</div>
+
+<script>
+// ============================================================
+//  全局状态 (与之前逻辑一致，UI增强)
+// ============================================================
+let files = [];
+let processedBlobs = [];
+let processedNames = [];
+let currentFunc = 'bw';
+
+const pageTitle = document.getElementById('pageTitle');
+const fileInput = document.getElementById('fileInput');
+const dropArea = document.getElementById('dropArea');
+const fileListEl = document.getElementById('fileList');
+const fileCount = document.getElementById('fileCount');
+const paramCard = document.getElementById('paramCard');
+const previewContainer = document.getElementById('previewContainer');
+const actionBtn = document.getElementById('actionBtn');
+const downloadAllBtn = document.getElementById('downloadAllBtn');
+const statusText = document.getElementById('statusText');
+const statusDot = document.getElementById('statusDot');
+const resultCount = document.getElementById('resultCount');
+
+// ============================================================
+//  导航切换
+// ============================================================
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    currentFunc = this.dataset.page;
+    const titles = {
+      bw: '🎨 彩色转黑白',
+      format: '🔄 图片格式转换',
+      ocr: '📝 OCR 智能重命名'
+    };
+    pageTitle.innerHTML = `${titles[currentFunc]} <span class="glow">✦ 实时预览</span>`;
+    renderParams();
+    clearProcessed();
+    updateStatus('就绪', 'idle');
+  });
+});
+
+// ============================================================
+//  文件上传
+// ============================================================
+function addFiles(newFiles) {
+  for (const f of newFiles) {
+    if (!f.type.startsWith('image/')) continue;
+    const exists = files.some(ex => ex.name === f.name && ex.size === f.size);
+    if (!exists) files.push(f);
+  }
+  renderFileList();
+  clearProcessed();
+  updateStatus(`已添加 ${newFiles.length} 个文件`, 'idle');
+}
+
+dropArea.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) addFiles(Array.from(e.target.files));
+  e.target.value = '';
+});
+dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('dragover'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+dropArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropArea.classList.remove('dragover');
+  if (e.dataTransfer.files.length) addFiles(Array.from(e.dataTransfer.files));
+});
+document.getElementById('selectBtn').addEventListener('click', () => fileInput.click());
+document.getElementById('clearBtn').addEventListener('click', () => { files = []; renderFileList(); clearProcessed(); updateStatus('已清空', 'idle'); });
+
+function renderFileList() {
+  fileListEl.innerHTML = files.map(f =>
+    `<div class="file-item"><span>${f.name}</span><span class="size">${(f.size/1024).toFixed(1)} KB</span></div>`
+  ).join('');
+  fileCount.textContent = `◈ 已选择 ${files.length} 个文件`;
+}
+
+// ============================================================
+//  参数面板渲染
+// ============================================================
+function renderParams() {
+  if (currentFunc === 'bw') {
+    paramCard.innerHTML = `
+      <div class="param-row">
+        <span class="param-label">◈ 转换模式</span>
+        <div class="radio-group">
+          <label><input type="radio" name="bwMode" value="strong" checked> 强对比度</label>
+          <label><input type="radio" name="bwMode" value="normal"> 普通灰度</label>
+        </div>
+      </div>
+      <div class="param-row">
+        <span class="param-label">◈ 阈值（强对比度）</span>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <input type="range" id="thresholdSlider" min="0" max="255" value="128">
+          <span class="range-value" id="thresholdVal">128</span>
+        </div>
+      </div>
+      <div class="checkbox-group">
+        <label><input type="checkbox" id="autoCrop"> ✦ 自动裁切边缘（去白边）</label>
+      </div>
+      <div class="hint-text">💡 适合白底黑字签名 / 文档增强</div>
+    `;
+    document.getElementById('thresholdSlider')?.addEventListener('input', function() {
+      document.getElementById('thresholdVal').textContent = this.value;
+    });
+  } else if (currentFunc === 'format') {
+    paramCard.innerHTML = `
+      <div class="param-row">
+        <span class="param-label">◈ 输出格式</span>
+        <select id="formatSelect">
+          <option value="png">PNG</option>
+          <option value="jpeg">JPG</option>
+          <option value="webp">WEBP</option>
+          <option value="bmp">BMP</option>
+          <option value="gif">GIF</option>
+          <option value="tiff">TIFF</option>
+        </select>
+      </div>
+      <div class="param-row">
+        <span class="param-label">◈ 图片质量</span>
+        <div class="radio-group">
+          <label><input type="radio" name="quality" value="best"> 极致</label>
+          <label><input type="radio" name="quality" value="medium" checked> 均衡</label>
+          <label><input type="radio" name="quality" value="low"> 高效</label>
+        </div>
+      </div>
+    `;
+  } else if (currentFunc === 'ocr') {
+    paramCard.innerHTML = `
+      <div style="padding:4px 0;">
+        <p style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:12px;">
+          ✦ 利用 Tesseract.js 本地识别，文字提取后支持自定义重命名下载。
+        </p>
+        <div style="background:rgba(0,0,0,0.2);padding:12px 16px;border-radius:12px;font-size:13px;color:rgba(255,255,255,0.4);border-left:2px solid #7b2ffc;">
+          ⚠️ 手写体准确率受限，建议预先转黑白增强对比。
+        </div>
+        <div class="param-row" style="margin-top:14px;">
+          <span class="param-label">◈ 识别语言</span>
+          <select id="ocrLang">
+            <option value="chi_sim">中文简体</option>
+            <option value="eng">英文</option>
+            <option value="chi_tra">中文繁体</option>
+          </select>
+        </div>
+      </div>
+    `;
+  }
+  clearProcessed();
+}
+
+// ============================================================
+//  图片处理核心 (与之前一致，略作优化)
+// ============================================================
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function convertToBW(imageData, mode, threshold) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(imageData, 0, 0);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = data.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    let r = pixels[i], g = pixels[i+1], b = pixels[i+2];
+    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (mode === 'strong') {
+      let val = gray > threshold ? 255 : 0;
+      pixels[i] = pixels[i+1] = pixels[i+2] = val;
+    } else {
+      pixels[i] = pixels[i+1] = pixels[i+2] = gray;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+function autoCropCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  let left = w, right = 0, top = h, bottom = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      if (data[idx] < 250 || data[idx+1] < 250 || data[idx+2] < 250) {
+        if (x < left) left = x;
+        if (x > right) right = x;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+  }
+  if (left === w && top === h) return canvas;
+  const pad = 2;
+  left = Math.max(0, left - pad); top = Math.max(0, top - pad);
+  right = Math.min(w, right + pad + 1); bottom = Math.min(h, bottom + pad + 1);
+  const cropped = document.createElement('canvas');
+  cropped.width = right - left;
+  cropped.height = bottom - top;
+  const croppedCtx = cropped.getContext('2d');
+  croppedCtx.drawImage(canvas, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+  return cropped;
+}
+
+function convertFormat(canvas, format, quality) {
+  const mime = `image/${format}`;
+  let opts = {};
+  if (format === 'jpeg' || format === 'webp') opts.quality = quality / 100;
+  return new Promise((resolve) => canvas.toBlob(resolve, mime, opts.quality));
+}
+
+async function ocrImage(img, lang = 'chi_sim') {
+  const { data: { text } } = await Tesseract.recognize(img, lang, { logger: m => console.log(m) });
+  return text.trim();
+}
+
+// ============================================================
+//  主处理逻辑 (增强UI反馈)
+// ============================================================
+actionBtn.addEventListener('click', async function() {
+  if (files.length === 0) { alert('✦ 请先选择图片文件'); return; }
+  actionBtn.disabled = true;
+  actionBtn.textContent = '⏳ 处理中...';
+  updateStatus('处理中...', 'loading');
+  statusDot.className = 'status-dot';
+
+  try {
+    processedBlobs = [];
+    processedNames = [];
+
+    if (currentFunc === 'bw') {
+      const mode = document.querySelector('input[name="bwMode"]:checked')?.value || 'strong';
+      const threshold = parseInt(document.getElementById('thresholdSlider')?.value || 128);
+      const autoCropEnabled = document.getElementById('autoCrop')?.checked || false;
+
+      for (const file of files) {
+        const img = await loadImage(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let bwCanvas = convertToBW(imageData, mode, threshold);
+        if (autoCropEnabled) bwCanvas = autoCropCanvas(bwCanvas);
+        const blob = await new Promise(resolve => bwCanvas.toBlob(resolve, 'image/png'));
+        processedBlobs.push(blob);
+        processedNames.push(file.name.replace(/\.[^.]+$/, '') + '_bw.png');
+      }
+    } else if (currentFunc === 'format') {
+      const format = document.getElementById('formatSelect').value;
+      const qualityRadio = document.querySelector('input[name="quality"]:checked');
+      const qualityMap = { best: 95, medium: 75, low: 50 };
+      const quality = qualityMap[qualityRadio?.value || 'medium'];
+
+      for (const file of files) {
+        const img = await loadImage(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const blob = await convertFormat(canvas, format, quality);
+        processedBlobs.push(blob);
+        processedNames.push(file.name.replace(/\.[^.]+$/, '') + '.' + format);
+      }
+    } else if (currentFunc === 'ocr') {
+      const lang = document.getElementById('ocrLang')?.value || 'chi_sim';
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const img = await loadImage(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        let text = '';
+        try { text = await ocrImage(canvas, lang); } catch (e) { text = 'OCR失败'; }
+        let clean = text.replace(/[\n\r]/g, '').replace(/[\\/:*?"<>|]/g, '').trim();
+        if (clean.length === 0) clean = '未识别';
+        if (clean.length > 50) clean = clean.slice(0, 50);
+        const newBase = prompt(`✦ 请输入 "${file.name}" 的新文件名（不含扩展）`, clean);
+        if (newBase === null) continue;
+        const finalName = (newBase.trim() || '未命名') + '.png';
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        processedBlobs.push(blob);
+        processedNames.push(finalName);
+      }
+    }
+
+    renderPreviews();
+    resultCount.textContent = `✦ 生成 ${processedBlobs.length} 个文件`;
+    updateStatus('处理完成 ✦', 'idle');
+
+  } catch (err) {
+    alert('处理出错：' + err.message);
+    updateStatus('出错', 'idle');
+  } finally {
+    actionBtn.disabled = false;
+    actionBtn.textContent = '✦ 开始处理';
+    statusDot.className = 'status-dot idle';
+  }
+});
+
+// ============================================================
+//  预览 & 下载
+// ============================================================
+function renderPreviews() {
+  previewContainer.innerHTML = '';
+  if (processedBlobs.length === 0) {
+    previewContainer.innerHTML = '<div class="empty-preview">✦ 处理后，极光预览将在此显现</div>';
+    return;
+  }
+  processedBlobs.forEach((blob, idx) => {
+    const url = URL.createObjectURL(blob);
+    const div = document.createElement('div');
+    div.className = 'preview-item';
+    div.innerHTML = `<img src="${url}" alt="预览"><div class="pname">${processedNames[idx]}</div>`;
+    previewContainer.appendChild(div);
+  });
+}
+
+function clearProcessed() {
+  processedBlobs = [];
+  processedNames = [];
+  previewContainer.querySelectorAll('img').forEach(img => {
+    if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+  });
+  previewContainer.innerHTML = '<div class="empty-preview">✦ 处理后，极光预览将在此显现</div>';
+  resultCount.textContent = '等待处理';
+}
+
+downloadAllBtn.addEventListener('click', function() {
+  if (processedBlobs.length === 0) { alert('✦ 请先处理图片'); return; }
+  const zip = new JSZip();
+  processedBlobs.forEach((blob, i) => zip.file(processedNames[i] || `image_${i+1}.png`, blob));
+  zip.generateAsync({ type: 'blob' }).then((content) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = '图图_极光批量.zip';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+});
+
+function updateStatus(text, state = 'idle') {
+  statusText.textContent = text;
+  if (state === 'loading') {
+    statusDot.className = 'status-dot';
+  } else {
+    statusDot.className = 'status-dot idle';
+  }
+}
+
+// ============================================================
+//  初始化
+// ============================================================
+renderParams();
+updateStatus('就绪 · 等待文件', 'idle');
+</script>
+</body>
+</html>
